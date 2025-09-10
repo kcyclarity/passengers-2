@@ -8,13 +8,14 @@ export async function POST(request: Request) {
       return new Response(JSON.stringify({ error: 'orderId, filename 필요' }), { status: 400 });
     }
 
-    // logos/{orderId}/파일명 으로 저장
+    // 저장 경로: logos/{orderId}/파일명
     const path = `logos/${orderId}/${filename}`;
 
+    // v2: options는 upsert만 지원. contentType은 넣지 말 것.
     const { data, error } = await supabaseAdmin
       .storage
       .from('logos')
-      .createSignedUploadUrl(path, { contentType: mime ?? 'application/octet-stream' });
+      .createSignedUploadUrl(path); // ← 옵션 제거
 
     if (error || !data?.signedUrl) {
       return new Response(JSON.stringify({ error: error?.message || 'sign 실패' }), { status: 500 });

@@ -31,10 +31,10 @@ export default function TestUpload() {
       if (!put.ok) { setLog('업로드 실패'); return; }
 
       setLog(`완료! 저장 경로: ${j.path}\nSupabase → Storage → logos 버킷에서 확인하세요.`);
-  } catch (e: unknown) {
-  const msg = e instanceof Error ? e.message : 'unknown';
-  setLog('에러: ' + msg);
-}
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'unknown';
+      setLog('에러: ' + msg);
+    }
   }
 
   return (

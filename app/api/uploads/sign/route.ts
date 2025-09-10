@@ -2,7 +2,8 @@ import { supabaseAdmin } from '../../_lib/supabaseAdmin';
 
 export async function POST(request: Request) {
   try {
-    const { orderId, filename, mime } = await request.json();
+ const { orderId, filename } = await request.json();
+
 
     if (!orderId || !filename) {
       return new Response(JSON.stringify({ error: 'orderId, filename 필요' }), { status: 400 });

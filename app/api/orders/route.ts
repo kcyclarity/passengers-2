@@ -11,12 +11,13 @@ function priceOf(bundleId: string): number {
 
 export async function POST(request: Request) {
   try {
-    const { buyer, items, notes, promoCode } = (await request.json()) as {
-      buyer: Buyer;
-      items: Item[];
-      notes?: string;
-      promoCode?: string;
-    };
+const { buyer, items, notes: _notes, promoCode: _promoCode } = (await request.json()) as {
+  buyer: Buyer;
+  items: Item[];
+  notes?: string;
+  promoCode?: string;
+};
+
 
     if (!buyer?.company || !buyer?.name || !buyer?.email || !Array.isArray(items) || items.length === 0) {
       return new Response(JSON.stringify({ error: '필수 항목 누락' }), { status: 400 });

@@ -23,7 +23,9 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ signedUrl: data.signedUrl, path }), {
       headers: { 'content-type': 'application/json' },
     });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message || 'unknown' }), { status: 500 });
-  }
+} catch (e: unknown) {
+  const msg = e instanceof Error ? e.message : 'unknown';
+  return new Response(JSON.stringify({ error: msg }), { status: 500 });
+}
+
 }

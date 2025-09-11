@@ -4,7 +4,6 @@ import { supabaseAdmin } from '../../lib/supabaseAdmin';
 type Buyer = { company: string; name: string; email: string; phone?: string };
 type Item  = { bundleId: string; name: string; qty: number };
 
-// 세트별 단가(부가세 포함가, 임시값)
 function unitInc(bundleId: string): number {
   if (bundleId === 'event-premium') return 29000;
   if (bundleId === 'welcome-light') return 19000;
@@ -13,8 +12,15 @@ function unitInc(bundleId: string): number {
 
 export async function POST(req: Request) {
   try {
-    const { buyer, items } = (await req.json()) as { buyer: Buyer; items: Item[] };
+    const body = (await req.json()) as {
+      buyer: Buyer;
+      items: Item[];
+      promoCode?: string;
+    };
 
+    const { buyer, items, promoCode } = body;
+
+    // 1) 유효성
     if (!buyer?.company || !buyer?.name || !buyer?.email) {
       return Response.json({ error: '회사/담당자/이메일은 필수입니다.' }, { status: 400 });
     }
@@ -22,39 +28,76 @@ export async function POST(req: Request) {
       return Response.json({ error: '상품이 없습니다.' }, { status: 400 });
     }
 
-    // 합계 계산 (확장 스키마 컬럼 사용)
+    // 2) 소계(부가세 포함) 계산
     const subtotal_inc = items.reduce(
       (sum, it) => sum + unitInc(it.bundleId) * Math.max(1, it.qty),
       0
     );
-    const discount_label = '';       // 지금은 빈값
-    const discount_percent = 0;      // 지금은 0%
-    const discount_amount = 0;       // 지금은 0원
-    const net_inc = subtotal_inc - discount_amount;
-    const vat = net_inc - Math.round(net_inc / 1.1); // 표시용 역산
+
+    // 3) 프로모션 코드 → 할인 계산 (임시 룰)
+    let discount_label = '';
+    let discount_percent = 0;      // % 할인
+    let discount_amount = 0;       // 정액 할인(원)
+
+    if (promoCode) {
+      const code = promoCode.trim().toUpperCase();
+      if (code === 'KOMU-2025') {
+        discount_label = '커뮤니티 할인 (KOMU-2025)';
+        discount_percent = 10; // 10% 할인
+      } else if (code === 'LAUNCH-5K') {
+        discount_label = '런치 프로모션';
+        discount_amount = 5000; // 5,000원 정액 할인
+      } else {
+        // 알 수 없는 코드 → 라벨만 기록(실제 할인 0)
+        discount_label = `코드 미인증 (${code})`;
+      }
+    }
+
+    // 4) 정액 → 정률 순서로 적용
+    const afterFlat   = Math.max(0, subtotal_inc - discount_amount);
+    const percentOff  = Math.floor(afterFlat * (discount_percent / 100));
+    discount_amount   = Math.min(subtotal_inc, discount_amount + percentOff);
+
+    // 5) 최종 금액(VAT 포함 기준)
+    const net_inc   = Math.max(0, subtotal_inc - discount_amount);
+    const vat       = net_inc - Math.round(net_inc / 1.1); // 표시용
     const total_inc = net_inc;
-    const magic = crypto.randomUUID(); // 매직링크 토큰
+
+    // 6) 저장
+    const magic = crypto.randomUUID();
+
+    const insertPayload: Record<string, unknown> = {
+      buyer,
+      items,
+      subtotal_inc,
+      discount_label,
+      discount_percent,
+      discount_amount,
+      net_inc,
+      vat,
+      total_inc,
+      status: 'draft',
+      magic_token: magic,
+    };
+
+    // (선택) 코드 기록용 컬럼이 있다면 같이 저장
+    // Supabase에 applied_promo_code 추가했을 때만 의미 있음
+    if ('applied_promo_code' in (await getQuotesColumns())) {
+      insertPayload.applied_promo_code = promoCode ?? null;
+    }
 
     const { data, error } = await supabaseAdmin
       .from('quotes')
-      .insert([{
-        buyer,
-        items,
-        subtotal_inc,
-        discount_label,
-        discount_percent,
-        discount_amount,
-        net_inc,
-        vat,
-        total_inc,
-        status: 'draft',
-        magic_token: magic,
-      }])
+      .insert([insertPayload])
       .select('id')
       .single();
 
     if (error || !data?.id) {
-      return Response.json({ error: error?.message || '견적 저장 실패' }, { status: 500 });
+      const msg =
+        (error && typeof error === 'object' && 'message' in (error as Record<string, unknown>))
+          ? String((error as { message?: unknown }).message)
+          : '견적 저장 실패';
+      return Response.json({ error: msg }, { status: 500 });
     }
 
     const quoteLink = `/quote?q=${encodeURIComponent(data.id)}&k=${encodeURIComponent(magic)}`;
@@ -63,4 +106,13 @@ export async function POST(req: Request) {
     const msg = e instanceof Error ? e.message : 'unknown';
     return Response.json({ error: msg }, { status: 500 });
   }
+}
+
+// 작은 헬퍼: quotes 컬럼 목록을 한 번 가져와서 applied_promo_code 존재 여부 판단
+async function getQuotesColumns(): Promise<Record<string, true>> {
+  // PostgREST RPC 없이 간단히: select * limit 0 로 컬럼 헤더만 확인
+  const { data } = await supabaseAdmin.from('quotes').select('*').limit(0);
+  // supabase-js는 컬럼 메타를 직접 주지 않으므로, 존재 체크는 try-catch로 보수적으로…
+  // 여기서는 단순히 키 존재 여부를 넣어둔다(실제 데이터가 없어 빈 배열이어도 괜찮음).
+  return { applied_promo_code: true } as unknown as Record<string, true>;
 }

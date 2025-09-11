@@ -10,6 +10,17 @@ function unitInc(bundleId: string): number {
   return 15000; // basic-set
 }
 
+// 에러에서 안전하게 message 문자열을 뽑아주는 헬퍼
+function safeMessage(e: unknown, fallback = '오류'): string {
+  if (e instanceof Error) return e.message || fallback;
+  if (typeof e === 'object' && e !== null && 'message' in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === 'string' && m.length > 0) return m;
+    if (m != null) return String(m);
+  }
+  return fallback;
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
@@ -78,7 +89,7 @@ export async function POST(req: Request) {
       total_inc,
       status: 'draft' as const,
       magic_token: magic,
-      // 필요 시, quotes 테이블에 applied_promo_code 컬럼 추가 후 아래 주석 해제
+      // quotes 테이블에 applied_promo_code 컬럼을 추가했다면 아래 주석 해제:
       // applied_promo_code: promoCode ?? null,
     };
 
@@ -89,17 +100,14 @@ export async function POST(req: Request) {
       .single();
 
     if (error || !row?.id) {
-      const msg =
-        (error && typeof error === 'object' && 'message' in (error as Record<string, unknown>))
-          ? String((error as { message?: unknown }).message)
-          : '견적 저장 실패';
+      const msg = safeMessage(error, '견적 저장 실패');
       return Response.json({ error: msg }, { status: 500 });
     }
 
     const quoteLink = `/quote?q=${encodeURIComponent(row.id)}&k=${encodeURIComponent(magic)}`;
     return Response.json({ quoteId: row.id, quoteLink });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'unknown';
+    const msg = safeMessage(e, 'unknown');
     return Response.json({ error: msg }, { status: 500 });
   }
 }

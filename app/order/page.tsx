@@ -40,9 +40,10 @@ export default function OrderPage() {
 
       // ✅ 견적 페이지로 이동
       window.location.href = j.quoteLink;
-    } catch (err) {
-      setState('error'); setMessage('네트워크 오류');
-    }
+} catch {
+  setState('error'); setMessage('네트워크 오류');
+}
+
   }
 
   return (

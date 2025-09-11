@@ -1,8 +1,16 @@
-// app/api/quote/route.ts
+// app/api/quotes/route.ts
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
-// 안전한 메시지 추출
-function safeMessage(e: unknown, fallback = '오류') {
+type Buyer = { company: string; name: string; email: string; phone?: string };
+type Item  = { bundleId: string; name: string; qty: number };
+
+function unitInc(bundleId: string): number {
+  if (bundleId === 'event-premium') return 29000;
+  if (bundleId === 'welcome-light') return 19000;
+  return 15000; // basic-set
+}
+
+function safeMessage(e: unknown, fallback = '오류'): string {
   if (e instanceof Error) return e.message || fallback;
   if (typeof e === 'object' && e && 'message' in e) {
     const m = (e as { message?: unknown }).message;
@@ -12,66 +20,81 @@ function safeMessage(e: unknown, fallback = '오류') {
   return fallback;
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const q = searchParams.get('q') || ''; // quotes.id
-    const k = searchParams.get('k') || ''; // quotes.magic_token
+    const body = (await req.json()) as {
+      buyer: Buyer;
+      items: Item[];
+      promoCode?: string;
+    };
 
-    if (!q || !k) {
-      return Response.json({ error: 'missing q or k' }, { status: 400 });
+    const { buyer, items, promoCode } = body;
+
+    // 1) 유효성
+    if (!buyer?.company || !buyer?.name || !buyer?.email) {
+      return Response.json({ error: '회사/담당자/이메일은 필수입니다.' }, { status: 400 });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return Response.json({ error: '상품이 없습니다.' }, { status: 400 });
     }
 
-    // 필요한 필드들만 선택
-    const { data, error } = await supabaseAdmin
+    // 2) 소계(부가세 포함) 계산
+    const subtotal_inc = items.reduce(
+      (sum, it) => sum + unitInc(it.bundleId) * Math.max(1, it.qty),
+      0
+    );
+
+    // 3) 프로모션 코드 → 할인 계산 (임시 룰)
+    let discount_label = '';
+    let discount_percent = 0; // %
+    let discount_amount = 0;  // 원
+
+    if (promoCode) {
+      const code = promoCode.trim().toUpperCase();
+      if (code === 'KOMU-2025') {
+        discount_label = '커뮤니티 할인 (KOMU-2025)';
+        discount_percent = 10;
+      } else if (code === 'LAUNCH-5K') {
+        discount_label = '런치 프로모션';
+        discount_amount = 5000;
+      } else {
+        discount_label = `코드 미인증 (${code})`;
+      }
+    }
+
+    // 4) 정액 → 정률 순서 적용
+    const afterFlat  = Math.max(0, subtotal_inc - discount_amount);
+    const percentOff = Math.floor(afterFlat * (discount_percent / 100));
+    discount_amount  = Math.min(subtotal_inc, discount_amount + percentOff);
+
+    // 5) 최종 금액(VAT 포함 기준)
+    const net_inc   = Math.max(0, subtotal_inc - discount_amount);
+    const vat       = net_inc - Math.round(net_inc / 1.1);
+    const total_inc = net_inc;
+
+    // 6) 저장
+    const magic = crypto.randomUUID();
+
+    const { data: row, error } = await supabaseAdmin
       .from('quotes')
-      .select(
-        [
-          'id',
-          'buyer',             // JSON
-          'items',             // JSON[]
-          'subtotal_inc',
-          'discount_label',
-          'discount_percent',
-          'discount_amount',
-          'net_inc',
-          'vat',
-          'total_inc',
-          'status',
-          'magic_token',
-        ].join(',')
-      )
-      .eq('id', q)
-      .eq('magic_token', k)
-      .limit(1)
+      .insert([{
+        buyer, items,
+        subtotal_inc,
+        discount_label, discount_percent, discount_amount,
+        net_inc, vat, total_inc,
+        status: 'draft' as const,
+        magic_token: magic,
+        // applied_promo_code: promoCode ?? null,  // 원하면 컬럼 추가 후 주석 해제
+      }])
+      .select('id')
       .single();
 
-    if (error || !data) {
-      return Response.json({ error: safeMessage(error, 'not found') }, { status: 404 });
+    if (error || !row?.id) {
+      return Response.json({ error: safeMessage(error, '견적 저장 실패') }, { status: 500 });
     }
 
-    // buyer JSON을 화면에서 쓰기 쉽게 펼침
-    type BuyerJSON = { company?: string; name?: string; email?: string; phone?: string } | null | undefined;
-    const buyer = (data.buyer as BuyerJSON) ?? {};
-
-    return Response.json({
-      id: data.id,
-      // 화면에 필요한 필드
-      buyer_company: buyer?.company ?? '',
-      buyer_name:    buyer?.name ?? '',
-      buyer_email:   buyer?.email ?? '',
-      buyer_phone:   buyer?.phone ?? '',
-      // 금액들
-      subtotal_inc:     data.subtotal_inc ?? 0,
-      discount_label:   data.discount_label ?? '',
-      discount_percent: data.discount_percent ?? 0,
-      discount_amount:  data.discount_amount ?? 0,
-      vat:              data.vat ?? 0,
-      total_inc:        data.total_inc ?? 0,
-      // 필요 시 추가
-      status:           data.status ?? 'draft',
-      items:            data.items ?? [],
-    });
+    const quoteLink = `/quote?q=${encodeURIComponent(row.id)}&k=${encodeURIComponent(magic)}`;
+    return Response.json({ quoteId: row.id, quoteLink });
   } catch (e) {
     return Response.json({ error: safeMessage(e, 'unknown') }, { status: 500 });
   }

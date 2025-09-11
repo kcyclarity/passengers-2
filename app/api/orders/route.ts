@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
 type Buyer = { company: string; name: string; email: string; phone?: string };
 type Item = { bundleId: string; name: string; qty: number };

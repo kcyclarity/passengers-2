@@ -1,5 +1,5 @@
 // app/api/quote/route.ts
-import { supabaseAdmin } from '../../_lib/supabaseAdmin';
+import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

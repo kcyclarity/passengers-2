@@ -66,7 +66,7 @@ export async function POST(req: Request) {
     // 6) 저장
     const magic = crypto.randomUUID();
 
-    const insertPayload: Record<string, unknown> = {
+    const payload = {
       buyer,
       items,
       subtotal_inc,
@@ -76,23 +76,19 @@ export async function POST(req: Request) {
       net_inc,
       vat,
       total_inc,
-      status: 'draft',
+      status: 'draft' as const,
       magic_token: magic,
+      // 필요 시, quotes 테이블에 applied_promo_code 컬럼 추가 후 아래 주석 해제
+      // applied_promo_code: promoCode ?? null,
     };
 
-    // (선택) 코드 기록용 컬럼이 있다면 같이 저장
-    // Supabase에 applied_promo_code 추가했을 때만 의미 있음
-    if ('applied_promo_code' in (await getQuotesColumns())) {
-      insertPayload.applied_promo_code = promoCode ?? null;
-    }
-
-    const { data, error } = await supabaseAdmin
+    const { data: row, error } = await supabaseAdmin
       .from('quotes')
-      .insert([insertPayload])
+      .insert([payload])
       .select('id')
       .single();
 
-    if (error || !data?.id) {
+    if (error || !row?.id) {
       const msg =
         (error && typeof error === 'object' && 'message' in (error as Record<string, unknown>))
           ? String((error as { message?: unknown }).message)
@@ -100,19 +96,10 @@ export async function POST(req: Request) {
       return Response.json({ error: msg }, { status: 500 });
     }
 
-    const quoteLink = `/quote?q=${encodeURIComponent(data.id)}&k=${encodeURIComponent(magic)}`;
-    return Response.json({ quoteId: data.id, quoteLink });
+    const quoteLink = `/quote?q=${encodeURIComponent(row.id)}&k=${encodeURIComponent(magic)}`;
+    return Response.json({ quoteId: row.id, quoteLink });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
     return Response.json({ error: msg }, { status: 500 });
   }
-}
-
-// 작은 헬퍼: quotes 컬럼 목록을 한 번 가져와서 applied_promo_code 존재 여부 판단
-async function getQuotesColumns(): Promise<Record<string, true>> {
-  // PostgREST RPC 없이 간단히: select * limit 0 로 컬럼 헤더만 확인
-  const { data } = await supabaseAdmin.from('quotes').select('*').limit(0);
-  // supabase-js는 컬럼 메타를 직접 주지 않으므로, 존재 체크는 try-catch로 보수적으로…
-  // 여기서는 단순히 키 존재 여부를 넣어둔다(실제 데이터가 없어 빈 배열이어도 괜찮음).
-  return { applied_promo_code: true } as unknown as Record<string, true>;
 }

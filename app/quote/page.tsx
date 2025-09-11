@@ -14,9 +14,14 @@ type Quote = {
   total_inc: number;
 };
 
-export default async function QuotePage({ searchParams }: { searchParams: { q?: string; k?: string } }) {
-  const q = searchParams.q || '';
-  const k = searchParams.k || '';
+export default async function QuotePage({
+  searchParams,
+}: {
+  searchParams?: { q?: string; k?: string };
+}) {
+  const q = searchParams?.q || '';
+  const k = searchParams?.k || '';
+
 
   const h = headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';

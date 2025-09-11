@@ -1,71 +1,44 @@
+import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
-type Buyer = { company: string; name: string; email: string; phone?: string };
-type Item = { bundleId: string; name: string; qty: number };
+export const dynamic = 'force-dynamic';
 
-function priceOf(bundleId: string): number {
-  if (bundleId === 'event-premium') return 29000;
-  if (bundleId === 'welcome-light') return 19000;
-  return 15000;
-}
-
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    // notes, promoCode는 지금은 사용 안 하므로 구조분해에서 제외
-    const { buyer, items } = (await request.json()) as {
-      buyer: Buyer;
-      items: Item[];
-      notes?: string;
-      promoCode?: string;
-    };
+    const body = await req.json().catch(() => null);
+    if (!body) return Response.json({ error: 'invalid_json' }, { status: 400 });
 
-    if (!buyer?.company || !buyer?.name || !buyer?.email || !Array.isArray(items) || items.length === 0) {
-      return new Response(JSON.stringify({ error: '필수 항목 누락' }), { status: 400 });
+    const { buyer, items, notes, promoCode } = body ?? {};
+
+    if (!buyer?.company || !buyer?.name || !buyer?.email) {
+      return Response.json({ error: 'missing_required_buyer_fields' }, { status: 400 });
     }
 
-    // 금액 계산 (아주 단순한 버전)
-    const subtotal = items.reduce((sum, it) => sum + priceOf(it.bundleId) * Math.max(1, it.qty), 0);
-    const discount = 0; // TODO: 프로모션 코드 적용은 이후 단계에서
-    const vat = Math.round((subtotal - discount) * 0.1);
-    const total = subtotal - discount + vat;
-
-    // 매직링크 토큰 (주문 추적용)
-    const magic = crypto.randomUUID();
+    const safeItems = Array.isArray(items) ? items : [];
 
     const { data, error } = await supabaseAdmin
       .from('orders')
-      .insert([
-        {
-          status: 'awaiting_payment',
-          buyer,
-          shipping: null,
-          items,
-          subtotal,
-          discount,
-          vat,
-          total,
-          promo_id: null, // 추후 promoCode 검증 후 연결
-          need_tax_invoice: false,
-          change_deadline_at: null,
-          magic_token: magic,
-          created_at: new Date().toISOString(),
-        },
-      ])
-      .select('id')
+      .insert({
+        buyer,                 // jsonb
+        items: safeItems,      // jsonb
+        notes: notes ?? null,  // text (nullable)
+        promo_code: promoCode ?? null, // text (nullable)
+        // subtotal/discount/vat/total 은 DB default 0 사용
+        // status 는 default 'draft' (옵션)
+      })
+      .select('id, magic_token')
       .single();
 
-    if (error || !data?.id) {
-      return new Response(JSON.stringify({ error: error?.message || '주문 저장 실패' }), { status: 500 });
+    if (error) {
+      console.error('Supabase insert error /api/orders:', error);
+      return Response.json({ error: error.message }, { status: 500 });
     }
 
-    const orderId = data.id as string;
-    const magicLink = `/track?o=${encodeURIComponent(orderId)}&k=${encodeURIComponent(magic)}`;
-
-    return new Response(JSON.stringify({ orderId, magicLink }), {
-      headers: { 'content-type': 'application/json' },
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'unknown';
-    return new Response(JSON.stringify({ error: msg }), { status: 500 });
+    const magicLink = `/quote?q=${data.id}&k=${data.magic_token}`;
+    return Response.json({ ok: true, id: data.id, magicLink });
+  } catch (e) {
+    console.error('Unhandled /api/orders error:', e);
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ error: msg }, { status: 500 });
   }
 }

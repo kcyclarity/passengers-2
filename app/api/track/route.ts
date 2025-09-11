@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../lib/supabaseAdmin';
+import { supabaseAdmin } from '../../lib/supabaseAdmin';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

@@ -15,18 +15,17 @@ type Quote = {
 };
 
 export default async function QuotePage({
-  // Next.js 15 템플릿은 searchParams를 Promise로 전달합니다.
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; k?: string }>;
 }) {
-  // 반드시 await 해서 실제 값을 꺼냅니다.
+  // ✅ Next.js 15: searchParams와 headers 모두 Promise 처리 필요
   const sp = await searchParams;
+  const h = await headers();
+
   const q = sp?.q || '';
   const k = sp?.k || '';
 
-  // 배포 환경에서 절대경로 생성 (상대 경로 fetch 이슈 회피)
-  const h = headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const base = host ? `${proto}://${host}` : '';
@@ -70,7 +69,6 @@ export default async function QuotePage({
         <div className="font-bold">총 합계: {quote.total_inc.toLocaleString()}원</div>
       </section>
 
-      {/* (다음 단계) PDF 다운로드 / 주문확정 버튼 추가 예정 */}
       <div className="text-sm text-gray-500">PDF/결제 버튼은 다음 단계에서 붙입니다.</div>
     </main>
   );

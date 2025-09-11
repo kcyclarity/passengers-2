@@ -17,9 +17,13 @@ export async function GET(req: Request) {
 
   if (error || !data) return Response.json({ error: 'not found' }, { status: 404 });
 
-// ...
-if (error || !data) return Response.json({ error: error?.message || 'not found' }, { status: 404 });
-
+if (error || !data) {
+  const msg =
+    (error && typeof error === 'object' && 'message' in (error as Record<string, unknown>))
+      ? String((error as { message?: unknown }).message)
+      : 'not found';
+  return Response.json({ error: msg }, { status: 404 });
+}
 // 타입 선언으로 any 제거
 type BuyerJSON = { company?: string; name?: string; email?: string; phone?: string } | null | undefined;
 type QuoteRow = typeof data & { buyer?: BuyerJSON };

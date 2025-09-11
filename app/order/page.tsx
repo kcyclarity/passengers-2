@@ -70,6 +70,18 @@ export default function OrderPage() {
           <div><label className="block text-sm mb-1">연락처</label><input name="phone" className="border rounded px-3 py-2 w-full" /></div>
         </div>
 
+        {/* (선택) 프로모션 코드 */}
+<div>
+  <label className="block text-sm mb-1">프로모션 코드 (선택)</label>
+  <input
+    name="promo"
+    placeholder="예: KOMU-2025"
+    className="border rounded px-3 py-2 w-full"
+  />
+  <p className="text-xs text-gray-500 mt-1">코드가 없으면 비워두세요.</p>
+</div>
+
+
         <button disabled={state==='submitting'} className="px-4 py-2 rounded bg-black text-white">
           {state==='submitting' ? '처리 중…' : '견적 생성하기'}
         </button>

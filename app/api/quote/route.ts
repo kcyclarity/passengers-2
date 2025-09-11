@@ -17,13 +17,22 @@ export async function GET(req: Request) {
 
   if (error || !data) return Response.json({ error: 'not found' }, { status: 404 });
 
-  // buyer JSON을 화면에서 쓰기 쉬운 납작한 형태로도 같이 전달
-  const buyer = (data as any).buyer || {};
-  return Response.json({
-    ...data,
-    buyer_company: buyer.company ?? '',
-    buyer_name: buyer.name ?? '',
-    buyer_email: buyer.email ?? '',
-    buyer_phone: buyer.phone ?? '',
-  });
+// ...
+if (error || !data) return Response.json({ error: error?.message || 'not found' }, { status: 404 });
+
+// 타입 선언으로 any 제거
+type BuyerJSON = { company?: string; name?: string; email?: string; phone?: string } | null | undefined;
+type QuoteRow = typeof data & { buyer?: BuyerJSON };
+
+const d = data as QuoteRow;
+const b = d.buyer ?? {};
+
+return Response.json({
+  ...d,
+  buyer_company: b?.company ?? '',
+  buyer_name:    b?.name ?? '',
+  buyer_email:   b?.email ?? '',
+  buyer_phone:   b?.phone ?? '',
+});
+
 }
